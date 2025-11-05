@@ -5,6 +5,7 @@ class DrupalApi {
     constructor() {
         this.name = 'drupalApi';
         this.displayName = 'Drupal API';
+        this.icon = 'file:drupal.svg';
         this.documentationUrl = 'https://github.com/org/-drupal?tab=readme-ov-file#credentials';
         this.properties = [
             {

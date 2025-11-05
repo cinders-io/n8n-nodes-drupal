@@ -3,6 +3,7 @@ import type {
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
+	Icon,
 } from 'n8n-workflow';
 
 export class DrupalApi implements ICredentialType {
@@ -11,7 +12,7 @@ export class DrupalApi implements ICredentialType {
 	displayName = 'Drupal API';
 
 	// Shown in n8n's UI
-	icon = 'file:drupal.svg';
+	icon: Icon = 'file:drupal.svg';
 
 	// Link to your community node's README
 	documentationUrl = 'https://github.com/org/-drupal?tab=readme-ov-file#credentials';

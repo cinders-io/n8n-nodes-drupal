@@ -8,21 +8,28 @@ import type {
 
 export class DrupalApi implements ICredentialType {
 	name = 'drupalApi';
-
 	displayName = 'Drupal API';
-
-	// Shown in n8n's UI
 	icon: Icon = 'file:drupal.svg';
 
 	// Link to your community node's README
-	documentationUrl = 'https://github.com/org/-drupal?tab=readme-ov-file#credentials';
+	documentationUrl = 'https://github.com/cinders-io/n8n-nodes-drupal';
 
 	properties: INodeProperties[] = [
+		{
+			displayName: 'Base URL',
+			name: 'baseUrl',
+			type: 'string',
+			default: '',
+			placeholder: 'https://example.com',
+			description: 'Your Drupal site base URL (no trailing slash).',
+			required: true,
+		},
 		{
 			displayName: 'Username',
 			name: 'username',
 			type: 'string',
 			default: '',
+			required: true,
 		},
 		{
 			displayName: 'Password',
@@ -32,6 +39,14 @@ export class DrupalApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
+			required: true,
+		},
+		{
+			displayName: 'Allow Unauthorized SSL Certs',
+			name: 'allowUnauthorized',
+			type: 'boolean',
+			default: false,
+			description: 'Enable only for local/self-signed HTTPS during testing.',
 		},
 	];
 
@@ -47,8 +62,12 @@ export class DrupalApi implements ICredentialType {
 
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: 'https://example.com/jsonapi',
-			url: '/v1/user',
+			url: '={{$credentials.baseUrl}}/jsonapi',
+			ignoreHttpStatusErrors: false,
+			returnFullResponse: false,
+			// n8n maps this to the underlying request library:
+			// @ts-expect-error - supported by n8n runtime
+			rejectUnauthorized: '={{!$credentials.allowUnauthorized}}',
 		},
 	};
 }

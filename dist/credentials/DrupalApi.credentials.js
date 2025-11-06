@@ -6,13 +6,23 @@ class DrupalApi {
         this.name = 'drupalApi';
         this.displayName = 'Drupal API';
         this.icon = 'file:drupal.svg';
-        this.documentationUrl = 'https://github.com/org/-drupal?tab=readme-ov-file#credentials';
+        this.documentationUrl = 'https://github.com/cinders-io/n8n-nodes-drupal';
         this.properties = [
+            {
+                displayName: 'Base URL',
+                name: 'baseUrl',
+                type: 'string',
+                default: '',
+                placeholder: 'https://example.com',
+                description: 'Your Drupal site base URL (no trailing slash).',
+                required: true,
+            },
             {
                 displayName: 'Username',
                 name: 'username',
                 type: 'string',
                 default: '',
+                required: true,
             },
             {
                 displayName: 'Password',
@@ -22,6 +32,14 @@ class DrupalApi {
                     password: true,
                 },
                 default: '',
+                required: true,
+            },
+            {
+                displayName: 'Allow Unauthorized SSL Certs',
+                name: 'allowUnauthorized',
+                type: 'boolean',
+                default: false,
+                description: 'Enable only for local/self-signed HTTPS during testing.',
             },
         ];
         this.authenticate = {
@@ -35,8 +53,10 @@ class DrupalApi {
         };
         this.test = {
             request: {
-                baseURL: 'https://example.com/jsonapi',
-                url: '/v1/user',
+                url: '={{$credentials.baseUrl}}/jsonapi',
+                ignoreHttpStatusErrors: false,
+                returnFullResponse: false,
+                rejectUnauthorized: '={{!$credentials.allowUnauthorized}}',
             },
         };
     }

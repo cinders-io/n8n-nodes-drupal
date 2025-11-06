@@ -2,8 +2,20 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Drupal = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
+const n8n_workflow_2 = require("n8n-workflow");
 const user_1 = require("./resources/user");
-const company_1 = require("./resources/company");
+const GenericFunctions_1 = require("./GenericFunctions");
+function resourceToCollectionPath(resource) {
+    switch (resource) {
+        case 'user':
+            return '/jsonapi/user/user';
+        default:
+            return `/jsonapi/${resource}/${resource}`;
+    }
+}
+function resourceToItemPath(resource, id) {
+    return `${resourceToCollectionPath(resource)}/${id}`;
+}
 class Drupal {
     constructor() {
         this.description = {
@@ -21,13 +33,6 @@ class Drupal {
             inputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             credentials: [{ name: 'drupalApi', required: true }],
-            requestDefaults: {
-                baseURL: 'https://example.com/jsonapi',
-                headers: {
-                    Accept: 'application/json',
-                    'Content-Type': 'application/json',
-                },
-            },
             properties: [
                 {
                     displayName: 'Resource',
@@ -39,17 +44,37 @@ class Drupal {
                             name: 'User',
                             value: 'user',
                         },
-                        {
-                            name: 'Company',
-                            value: 'company',
-                        },
                     ],
                     default: 'user',
                 },
                 ...user_1.userDescription,
-                ...company_1.companyDescription,
             ],
         };
+    }
+    async execute() {
+        const items = this.getInputData();
+        const returnData = [];
+        for (let i = 0; i < items.length; i++) {
+            const resource = this.getNodeParameter('resource', i);
+            const operation = this.getNodeParameter('operation', i);
+            if (operation === 'get') {
+                const id = this.getNodeParameter('id', i);
+                const path = resourceToItemPath(resource, id);
+                const res = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', path));
+                returnData.push({ json: res !== null && res !== void 0 ? res : {} });
+            }
+            else if (operation === 'getAll') {
+                const limit = this.getNodeParameter('limit', i, 50);
+                const path = resourceToCollectionPath(resource);
+                const qs = { 'page[limit]': limit };
+                const res = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', path, {}, qs));
+                returnData.push({ json: res !== null && res !== void 0 ? res : {} });
+            }
+            else {
+                throw new n8n_workflow_2.NodeOperationError(this.getNode(), `Operation "${operation}" on resource "${resource}" is not implemented.`);
+            }
+        }
+        return this.prepareOutputData(returnData);
     }
 }
 exports.Drupal = Drupal;

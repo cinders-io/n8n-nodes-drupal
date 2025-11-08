@@ -58,7 +58,7 @@ class Drupal {
             const resource = this.getNodeParameter('resource', i);
             const operation = this.getNodeParameter('operation', i);
             if (operation === 'get') {
-                const id = this.getNodeParameter('id', i);
+                const id = this.getNodeParameter('userId', i);
                 const path = resourceToItemPath(resource, id);
                 const res = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', path));
                 returnData.push({ json: res !== null && res !== void 0 ? res : {} });

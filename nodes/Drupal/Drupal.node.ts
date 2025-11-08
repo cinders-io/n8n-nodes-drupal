@@ -76,7 +76,7 @@ export class Drupal implements INodeType {
 
 			if (operation === 'get') {
 				// Expect an "id" parameter in the resource description
-				const id = this.getNodeParameter('id', i) as string;
+				const id = this.getNodeParameter('userId', i) as string;
 				const path = resourceToItemPath(resource, id);
 
 				const res = (await drupalApiRequest.call(this, 'GET', path)) as IDataObject;

@@ -6,29 +6,10 @@ import {
 	type INodeExecutionData,
 	type IDataObject,
 } from 'n8n-workflow';
+
 import { NodeOperationError } from 'n8n-workflow';
 
-import { userDescription } from './resources/user';
-import { drupalApiRequest } from './GenericFunctions';
-
-// ---- Top-level helpers (not class methods) ----
-
-// Helper to translate “resource” into a JSON:API collection path
-// e.g., /jsonapi/user/user
-function resourceToCollectionPath(resource: string): string {
-	switch (resource) {
-		case 'user':
-			return '/jsonapi/user/user';
-		default:
-			return `/jsonapi/${resource}/${resource}`;
-	}
-}
-
-// Helper to translate “resource” into a JSON:API single-item path by ID
-// e.g., /jsonapi/user/user/{uuid}
-function resourceToItemPath(resource: string, id: string): string {
-	return `${resourceToCollectionPath(resource)}/${id}`;
-}
+import { drupalApiRequest, buildJsonApiPath } from './GenericFunctions';
 
 export class Drupal implements INodeType {
 	description: INodeTypeDescription = {
@@ -37,8 +18,8 @@ export class Drupal implements INodeType {
 		icon: { light: 'file:drupal.svg', dark: 'file:drupal.dark.svg' },
 		group: ['transform'],
 		version: 1,
-		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Interact with the Drupal API',
+		subtitle: '={{$parameter["operation"] + ": " + $parameter["resourceType"]}}',
+		description: 'Interact with Drupal JSON:API generically',
 		defaults: {
 			name: 'Drupal',
 		},
@@ -48,57 +29,185 @@ export class Drupal implements INodeType {
 		credentials: [{ name: 'drupalApi', required: true }],
 
 		properties: [
+			// Generic JSON:API CRUD — one resource type string drives everything
 			{
-				displayName: 'Resource',
-				name: 'resource',
+				displayName: 'Resource Type',
+				name: 'resourceType',
+				type: 'string',
+				required: true,
+				default: 'node--page',
+				description:
+					'JSON:API resource type (e.g., "node--page", "taxonomy_term--tags", "user--user")',
+			},
+
+			{
+				displayName: 'Operation',
+				name: 'operation',
 				type: 'options',
 				noDataExpression: true,
+				default: 'get',
 				options: [
-					{
-						name: 'User',
-						value: 'user',
-					},
+					{ name: 'Create', value: 'create' },
+					{ name: 'Delete', value: 'delete' },
+					{ name: 'Get', value: 'get' },
+					{ name: 'Get Many', value: 'getAll' },
+					{ name: 'Update', value: 'update' },
 				],
-				default: 'user',
 			},
-			...userDescription,
+
+			{
+				displayName: 'UUID',
+				name: 'id',
+				type: 'string',
+				default: '',
+				displayOptions: {
+					show: {
+						operation: ['get', 'update', 'delete'],
+					},
+				},
+				description: 'The entity UUID',
+			},
+
+			{
+				displayName: 'Attributes (JSON)',
+				name: 'attributesJson',
+				type: 'json',
+				default: {},
+				displayOptions: {
+					show: {
+						operation: ['create', 'update'],
+					},
+				},
+				description: 'JSON of attributes for JSON:API create/update',
+			},
+
+			{
+				displayName: 'Query Parameters',
+				name: 'query',
+				type: 'json',
+				default: {},
+				displayOptions: {
+					show: {
+						operation: ['get', 'getAll'],
+					},
+				},
+				description: 'Filters, includes, pagination, etc',
+			},
+
+			{
+				displayName: 'Limit',
+				name: 'limit',
+				type: 'number',
+				default: 50,
+				typeOptions: {
+					minValue: 1,
+					maxValue: 100,
+				},
+				displayOptions: {
+					show: {
+						operation: ['getAll'],
+					},
+				},
+				description: 'Max number of results to return',
+			},
 		],
 	};
 
-	// Supports `get` (by id) and `getAll` (list with page limit)
-	async execute(this: IExecuteFunctions) {
+	// ---------------------------------------------------------------------
+	// execute()
+	// ---------------------------------------------------------------------
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
 		for (let i = 0; i < items.length; i++) {
-			const resource = this.getNodeParameter('resource', i) as string;
+			const resourceType = this.getNodeParameter('resourceType', i) as string;
 			const operation = this.getNodeParameter('operation', i) as string;
 
+			let response;
+
+			// -------------------------------------
+			// GET
+			// -------------------------------------
 			if (operation === 'get') {
-				// Expect an "id" parameter in the resource description
-				const id = this.getNodeParameter('userId', i) as string;
-				const path = resourceToItemPath(resource, id);
+				const id = this.getNodeParameter('id', i) as string;
+				const query = (this.getNodeParameter('query', i) as IDataObject) ?? {};
+				const path = buildJsonApiPath(resourceType, id);
 
-				const res = (await drupalApiRequest.call(this, 'GET', path)) as IDataObject;
-				returnData.push({ json: res ?? {} });
+				response = await drupalApiRequest.call(this, 'GET', path, {}, query);
+			}
 
-			} else if (operation === 'getAll') {
-				// Optionally accept a "limit" parameter and map to JSON:API paging
+			// -------------------------------------
+			// GET MANY
+			// -------------------------------------
+			else if (operation === 'getAll') {
 				const limit = this.getNodeParameter('limit', i, 50) as number;
+				const query = (this.getNodeParameter('query', i) as IDataObject) ?? {};
+				const path = buildJsonApiPath(resourceType);
 
-				const path = resourceToCollectionPath(resource);
-				const qs: IDataObject = { 'page[limit]': limit };
+				const qs = { ...query, 'page[limit]': limit };
 
-				const res = (await drupalApiRequest.call(this, 'GET', path, {}, qs)) as IDataObject;
-				returnData.push({ json: res ?? {} });
+				response = await drupalApiRequest.call(this, 'GET', path, {}, qs);
+			}
 
-			} else {
-				// Not implemented yet (error)
+			// -------------------------------------
+			// CREATE
+			// -------------------------------------
+			else if (operation === 'create') {
+				const attributes = this.getNodeParameter('attributesJson', i) as IDataObject;
+				const path = buildJsonApiPath(resourceType);
+
+				const body = {
+					data: {
+						type: resourceType,
+						attributes,
+					},
+				};
+
+				response = await drupalApiRequest.call(this, 'POST', path, body);
+			}
+
+			// -------------------------------------
+			// UPDATE
+			// -------------------------------------
+			else if (operation === 'update') {
+				const id = this.getNodeParameter('id', i) as string;
+				const attributes = this.getNodeParameter('attributesJson', i) as IDataObject;
+				const path = buildJsonApiPath(resourceType, id);
+
+				const body = {
+					data: {
+						type: resourceType,
+						id,
+						attributes,
+					},
+				};
+
+				response = await drupalApiRequest.call(this, 'PATCH', path, body);
+			}
+
+			// -------------------------------------
+			// DELETE
+			// -------------------------------------
+			else if (operation === 'delete') {
+				const id = this.getNodeParameter('id', i) as string;
+				const path = buildJsonApiPath(resourceType, id);
+
+				await drupalApiRequest.call(this, 'DELETE', path);
+				response = { success: true, id };
+			}
+
+			// -------------------------------------
+			// Unsupported
+			// -------------------------------------
+			else {
 				throw new NodeOperationError(
 					this.getNode(),
-					`Operation "${operation}" on resource "${resource}" is not implemented.`,
+					`Unsupported operation: ${operation}`,
 				);
 			}
+
+			returnData.push({ json: response ?? {} });
 		}
 
 		return this.prepareOutputData(returnData);

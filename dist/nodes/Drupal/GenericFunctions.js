@@ -1,21 +1,26 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildJsonApiPath = buildJsonApiPath;
 exports.drupalApiRequest = drupalApiRequest;
 const n8n_workflow_1 = require("n8n-workflow");
+function buildJsonApiPath(resourceType, id) {
+    const [entityTypeId, bundle] = resourceType.split('--');
+    const base = `/jsonapi/${entityTypeId}/${bundle}`;
+    return id ? `${base}/${id}` : base;
+}
 async function drupalApiRequest(method, path, body = {}, qs = {}, options = {}) {
-    const { baseUrl, allowUnauthorized } = await this.getCredentials('drupalApi');
+    const { baseUrl, allowUnauthorized } = (await this.getCredentials('drupalApi'));
     const requestOptions = {
         method,
         url: `${baseUrl}${path}`,
         json: true,
-        qs,
         body,
+        qs,
         headers: {
             Accept: 'application/vnd.api+json, application/json',
             'Content-Type': 'application/vnd.api+json',
-            'User-Agent': 'n8n-drupal-node',
         },
-        rejectUnauthorized: !(allowUnauthorized === true),
+        rejectUnauthorized: !allowUnauthorized,
     };
     try {
         return await this.helpers.httpRequestWithAuthentication.call(this, 'drupalApi', { ...requestOptions, ...options });

@@ -10,6 +10,13 @@ import { NodeApiError } from 'n8n-workflow';
 
 type ThisCtx = IExecuteFunctions | ILoadOptionsFunctions;
 
+export function buildJsonApiPath(resourceType: string, id?: string): string {
+	// resourceType is like "node--page"
+	const [entityTypeId, bundle] = resourceType.split('--');
+	const base = `/jsonapi/${entityTypeId}/${bundle}`;
+	return id ? `${base}/${id}` : base;
+}
+
 export async function drupalApiRequest(
 	this: ThisCtx,
 	method: IHttpRequestMethods,
@@ -17,8 +24,10 @@ export async function drupalApiRequest(
 	body: IDataObject = {},
 	qs: IDataObject = {},
 	options: IDataObject = {},
-): Promise<unknown> {
-	const { baseUrl, allowUnauthorized } = await this.getCredentials('drupalApi') as {
+) {
+	const { baseUrl, allowUnauthorized } = (await this.getCredentials(
+		'drupalApi',
+	)) as {
 		baseUrl: string;
 		allowUnauthorized?: boolean;
 	};
@@ -27,15 +36,14 @@ export async function drupalApiRequest(
 		method,
 		url: `${baseUrl}${path}`,
 		json: true,
-		qs,
 		body,
+		qs,
 		headers: {
 			Accept: 'application/vnd.api+json, application/json',
 			'Content-Type': 'application/vnd.api+json',
-			'User-Agent': 'n8n-drupal-node',
 		},
-		// @ts-expect-error - supported by n8n runtime
-		rejectUnauthorized: !(allowUnauthorized === true),
+		// @ts-expect-error supported by n8n runtime
+		rejectUnauthorized: !allowUnauthorized,
 	};
 
 	try {

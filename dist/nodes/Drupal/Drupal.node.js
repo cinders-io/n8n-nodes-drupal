@@ -6,13 +6,65 @@ const n8n_workflow_2 = require("n8n-workflow");
 const GenericFunctions_1 = require("./GenericFunctions");
 class Drupal {
     constructor() {
+        this.methods = {
+            loadOptions: {
+                async getEntityTypes() {
+                    var _a;
+                    const data = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', '/jsonapi'));
+                    const links = ((_a = data.links) !== null && _a !== void 0 ? _a : {});
+                    const types = new Set();
+                    for (const key of Object.keys(links)) {
+                        if (!key.includes('--'))
+                            continue;
+                        const [entityTypeId] = key.split('--');
+                        if (entityTypeId) {
+                            types.add(entityTypeId);
+                        }
+                    }
+                    const options = Array.from(types)
+                        .sort()
+                        .map((entityTypeId) => ({
+                        name: entityTypeId,
+                        value: entityTypeId,
+                    }));
+                    return options;
+                },
+                async getBundles() {
+                    var _a, _b, _c, _d;
+                    const entityTypeId = this.getCurrentNodeParameter('entityTypeId');
+                    if (!entityTypeId) {
+                        return [];
+                    }
+                    const data = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', '/jsonapi'));
+                    const links = ((_a = data.links) !== null && _a !== void 0 ? _a : {});
+                    const bundles = [];
+                    for (const key of Object.keys(links)) {
+                        if (!key.includes('--'))
+                            continue;
+                        const [type, bundle] = key.split('--');
+                        if (type !== entityTypeId || !bundle)
+                            continue;
+                        const linkEntry = ((_b = links[key]) !== null && _b !== void 0 ? _b : {});
+                        const meta = ((_c = linkEntry.meta) !== null && _c !== void 0 ? _c : {});
+                        const label = (_d = meta.label) !== null && _d !== void 0 ? _d : bundle;
+                        bundles.push({
+                            name: label,
+                            value: bundle,
+                            description: key,
+                        });
+                    }
+                    bundles.sort((a, b) => a.name.localeCompare(b.name));
+                    return bundles;
+                },
+            },
+        };
         this.description = {
             displayName: 'Drupal',
             name: 'drupal',
             icon: { light: 'file:drupal.svg', dark: 'file:drupal.dark.svg' },
             group: ['transform'],
             version: 1,
-            subtitle: '={{$parameter["operation"] + ": " + $parameter["resourceType"]}}',
+            subtitle: '={{$parameter["operation"] + ": " + $parameter["entityTypeId"] + "--" + $parameter["bundle"]}}',
             description: 'Interact with Drupal JSON:API generically',
             defaults: {
                 name: 'Drupal',
@@ -23,12 +75,28 @@ class Drupal {
             credentials: [{ name: 'drupalApi', required: true }],
             properties: [
                 {
-                    displayName: 'Resource Type',
-                    name: 'resourceType',
-                    type: 'string',
+                    displayName: 'Entity Type {Entity} Name or ID',
+                    name: 'entityTypeId',
+                    type: 'options',
+                    noDataExpression: true,
                     required: true,
-                    default: 'node--page',
-                    description: 'JSON:API resource type (e.g., "node--page", "taxonomy_term--tags", "user--user")',
+                    typeOptions: {
+                        loadOptionsMethod: 'getEntityTypes',
+                    },
+                    default: '',
+                    description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
+                },
+                {
+                    displayName: 'Bundle {Entity} Name or ID',
+                    name: 'bundle',
+                    type: 'options',
+                    noDataExpression: true,
+                    required: true,
+                    typeOptions: {
+                        loadOptionsMethod: 'getBundles',
+                    },
+                    default: '',
+                    description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
                 },
                 {
                     displayName: 'Operation',
@@ -104,7 +172,9 @@ class Drupal {
         const items = this.getInputData();
         const returnData = [];
         for (let i = 0; i < items.length; i++) {
-            const resourceType = this.getNodeParameter('resourceType', i);
+            const entityTypeId = this.getNodeParameter('entityTypeId', i);
+            const bundle = this.getNodeParameter('bundle', i);
+            const resourceType = `${entityTypeId}--${bundle}`;
             const operation = this.getNodeParameter('operation', i);
             let response;
             if (operation === 'get') {

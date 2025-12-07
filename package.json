@@ -1,11 +1,16 @@
 {
   "name": "n8n-nodes-drupal",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Community node for Drupal",
   "license": "MIT",
   "homepage": "",
-  "keywords": ["n8n-community-node-package"],
-  "author": { "name": "Stephen Mulvihill", "email": "smulvih2@gmail.com" },
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "author": {
+    "name": "Stephen Mulvihill",
+    "email": "smulvih2@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/cinders-io/n8n-nodes-drupal.git"
@@ -19,12 +24,18 @@
     "release": "n8n-node release",
     "prepublishOnly": "n8n-node prerelease"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "n8n": {
     "n8nNodesApiVersion": 1,
     "strict": true,
-    "credentials": ["dist/credentials/DrupalApi.credentials.js"],
-    "nodes": ["dist/nodes/Drupal/Drupal.node.js"]
+    "credentials": [
+      "dist/credentials/DrupalApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Drupal/Drupal.node.js"
+    ]
   },
   "devDependencies": {
     "@n8n/node-cli": "*",
@@ -36,5 +47,7 @@
   "overrides": {
     "change-case": "4.1.2"
   },
-  "peerDependencies": { "n8n-workflow": "*" }
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
 }

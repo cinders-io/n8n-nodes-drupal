@@ -125,6 +125,7 @@ export class Drupal implements INodeType {
 				required: true,
 				typeOptions: {
 					loadOptionsMethod: 'getBundles',
+					loadOptionsDependsOn: ['entityTypeId'],
 				},
 				default: '',
 				description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',

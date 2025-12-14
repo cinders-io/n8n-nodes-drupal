@@ -15,34 +15,24 @@ import { drupalApiRequest, buildJsonApiPath } from './GenericFunctions';
 
 function coerceAttributesJson(
 	ctx: IExecuteFunctions,
-	value: unknown,
+	value: string,
 	itemIndex: number,
 ): IDataObject {
-	// n8n "json" params usually return an object, but can be a string when using expressions / copy-paste.
-	if (typeof value === 'string') {
-		const trimmed = value.trim();
-		if (!trimmed) return {};
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(trimmed) as unknown;
-		} catch {
-			throw new NodeOperationError(
-				ctx.getNode(),
-				'Attributes (JSON) must be valid JSON. Example: {"title":"..."}',
-				{ itemIndex },
-			);
-		}
-		if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			throw new NodeOperationError(
-				ctx.getNode(),
-				'Attributes (JSON) must be a JSON object. Example: {"title":"..."}',
-				{ itemIndex },
-			);
-		}
-		return parsed as IDataObject;
+	const trimmed = (value ?? '').trim();
+	if (!trimmed) return {};
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(trimmed) as unknown;
+	} catch {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			'Attributes (JSON) must be valid JSON. Example: {"title":"..."}',
+			{ itemIndex },
+		);
 	}
 
-	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
 		throw new NodeOperationError(
 			ctx.getNode(),
 			'Attributes (JSON) must be a JSON object. Example: {"title":"..."}',
@@ -50,7 +40,7 @@ function coerceAttributesJson(
 		);
 	}
 
-	return value as IDataObject;
+	return parsed as IDataObject;
 }
 
 export class Drupal implements INodeType {
@@ -224,8 +214,11 @@ export class Drupal implements INodeType {
 			{
 				displayName: 'Attributes (JSON)',
 				name: 'attributesJson',
-				type: 'json',
-				default: {},
+				type: 'string',
+				typeOptions: {
+					rows: 10,
+				},
+				default: '{}',
 				displayOptions: {
 					show: {
 						operation: ['create', 'update'],
@@ -302,11 +295,8 @@ export class Drupal implements INodeType {
 
 			// CREATE
 			else if (operation === 'create') {
-				const attributes = coerceAttributesJson(
-					this,
-					this.getNodeParameter('attributesJson', i),
-					i,
-				);
+				const attributesJson = this.getNodeParameter('attributesJson', i) as string;
+				const attributes = coerceAttributesJson(this, attributesJson, i);
 				const path = buildJsonApiPath(resourceType);
 
 				const body = {
@@ -322,11 +312,8 @@ export class Drupal implements INodeType {
 			// UPDATE
 			else if (operation === 'update') {
 				const id = this.getNodeParameter('id', i) as string;
-				const attributes = coerceAttributesJson(
-					this,
-					this.getNodeParameter('attributesJson', i),
-					i,
-				);
+				const attributesJson = this.getNodeParameter('attributesJson', i) as string;
+				const attributes = coerceAttributesJson(this, attributesJson, i);
 				const path = buildJsonApiPath(resourceType, id);
 
 				const body = {

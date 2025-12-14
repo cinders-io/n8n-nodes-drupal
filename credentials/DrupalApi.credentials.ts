@@ -42,6 +42,17 @@ export class DrupalApi implements ICredentialType {
 			required: true,
 		},
 		{
+            displayName: 'Authentication Method',
+            name: 'authMethod',
+            type: 'options',
+            default: 'basic',
+            options: [
+                { name: 'Basic Auth (Authorization header)', value: 'basic' },
+                { name: 'Drupal Session (cookie) + CSRF token', value: 'session' },
+            ],
+            description: 'Use Session+CSRF if your hosting/proxy strips the Authorization header (common with PaaS/proxies).',
+        },
+		{
 			displayName: 'Allow Unauthorized SSL Certs',
 			name: 'allowUnauthorized',
 			type: 'boolean',

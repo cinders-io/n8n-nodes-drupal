@@ -12,16 +12,32 @@ class Drupal {
                     var _a;
                     const data = (await GenericFunctions_1.drupalApiRequest.call(this, 'GET', '/jsonapi'));
                     const links = ((_a = data.links) !== null && _a !== void 0 ? _a : {});
-                    const types = new Set();
+                    const typeBundles = new Map();
+                    const singleBundleContentAllowList = new Set([
+                        'file',
+                        'user',
+                        'comment',
+                    ]);
                     for (const key of Object.keys(links)) {
                         if (!key.includes('--'))
                             continue;
-                        const [entityTypeId] = key.split('--');
-                        if (entityTypeId) {
-                            types.add(entityTypeId);
+                        const [entityTypeId, bundle] = key.split('--');
+                        if (!entityTypeId || !bundle)
+                            continue;
+                        if (!typeBundles.has(entityTypeId)) {
+                            typeBundles.set(entityTypeId, new Set());
                         }
+                        typeBundles.get(entityTypeId).add(bundle);
                     }
-                    const options = Array.from(types)
+                    const options = Array.from(typeBundles.entries())
+                        .filter(([entityTypeId, bundles]) => {
+                        if (singleBundleContentAllowList.has(entityTypeId))
+                            return true;
+                        if (bundles.size === 1 && bundles.has(entityTypeId))
+                            return false;
+                        return true;
+                    })
+                        .map(([entityTypeId]) => entityTypeId)
                         .sort()
                         .map((entityTypeId) => ({
                         name: entityTypeId,

@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-drupal",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "Community node for Drupal",
   "license": "MIT",
   "homepage": "",
@@ -21,8 +21,8 @@
     "dev": "n8n-node dev",
     "lint": "n8n-node lint",
     "lint:fix": "n8n-node lint --fix",
-    "release": "n8n-node release",
-    "prepublishOnly": "n8n-node prerelease"
+    "release:rc": "npm run build && npm version prerelease --preid=rc --no-git-tag-version && npm publish --tag rc",
+    "release:stable": "npm run build && npm version patch --no-git-tag-version && npm publish"
   },
   "files": [
     "dist"

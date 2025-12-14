@@ -27,18 +27,41 @@ export class Drupal implements INodeType {
 				const data = (await drupalApiRequest.call(this, 'GET', '/jsonapi')) as IDataObject;
 				const links = (data.links ?? {}) as IDataObject;
 
-				const types = new Set<string>();
+				// entityTypeId -> bundles seen
+				const typeBundles = new Map<string, Set<string>>();
+
+				// Content entities that are often single-bundle (bundle == entity_type_id).
+				// Keep these even though they look like "type--type".
+				const singleBundleContentAllowList = new Set<string>([
+					'file',
+					'user',
+					'comment',
+				]);
 
 				for (const key of Object.keys(links)) {
 					// Keys we care about look like "node--page", "media--image"
 					if (!key.includes('--')) continue;
-					const [entityTypeId] = key.split('--');
-					if (entityTypeId) {
-						types.add(entityTypeId);
+					const [entityTypeId, bundle] = key.split('--');
+					if (!entityTypeId || !bundle) continue;
+
+					if (!typeBundles.has(entityTypeId)) {
+						typeBundles.set(entityTypeId, new Set<string>());
 					}
+					typeBundles.get(entityTypeId)!.add(bundle);
 				}
 
-				const options: INodePropertyOptions[] = Array.from(types)
+				const options: INodePropertyOptions[] = Array.from(typeBundles.entries())
+					.filter(([entityTypeId, bundles]) => {
+						// Keep allow-listed single-bundle content entity types.
+						if (singleBundleContentAllowList.has(entityTypeId)) return true;
+
+						// Drop entity types that ONLY expose "type--type" (no real bundles).
+						if (bundles.size === 1 && bundles.has(entityTypeId)) return false;
+
+						// Otherwise it's likely a real bundle-able content entity type.
+						return true;
+					})
+					.map(([entityTypeId]) => entityTypeId)
 					.sort()
 					.map((entityTypeId) => ({
 						name: entityTypeId,

@@ -4,6 +4,28 @@ exports.Drupal = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const n8n_workflow_2 = require("n8n-workflow");
 const GenericFunctions_1 = require("./GenericFunctions");
+function coerceAttributesJson(ctx, value, itemIndex) {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed)
+            return {};
+        let parsed;
+        try {
+            parsed = JSON.parse(trimmed);
+        }
+        catch {
+            throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), 'Attributes (JSON) must be valid JSON. Example: {"title":"..."}', { itemIndex });
+        }
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), 'Attributes (JSON) must be a JSON object. Example: {"title":"..."}', { itemIndex });
+        }
+        return parsed;
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), 'Attributes (JSON) must be a JSON object. Example: {"title":"..."}', { itemIndex });
+    }
+    return value;
+}
 class Drupal {
     constructor() {
         this.methods = {
@@ -208,7 +230,7 @@ class Drupal {
                 response = await GenericFunctions_1.drupalApiRequest.call(this, 'GET', path, {}, qs);
             }
             else if (operation === 'create') {
-                const attributes = this.getNodeParameter('attributesJson', i);
+                const attributes = coerceAttributesJson(this, this.getNodeParameter('attributesJson', i), i);
                 const path = (0, GenericFunctions_1.buildJsonApiPath)(resourceType);
                 const body = {
                     data: {
@@ -220,7 +242,7 @@ class Drupal {
             }
             else if (operation === 'update') {
                 const id = this.getNodeParameter('id', i);
-                const attributes = this.getNodeParameter('attributesJson', i);
+                const attributes = coerceAttributesJson(this, this.getNodeParameter('attributesJson', i), i);
                 const path = (0, GenericFunctions_1.buildJsonApiPath)(resourceType, id);
                 const body = {
                     data: {

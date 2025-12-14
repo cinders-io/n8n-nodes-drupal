@@ -13,6 +13,46 @@ import { NodeOperationError } from 'n8n-workflow';
 
 import { drupalApiRequest, buildJsonApiPath } from './GenericFunctions';
 
+function coerceAttributesJson(
+	ctx: IExecuteFunctions,
+	value: unknown,
+	itemIndex: number,
+): IDataObject {
+	// n8n "json" params usually return an object, but can be a string when using expressions / copy-paste.
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (!trimmed) return {};
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(trimmed) as unknown;
+		} catch {
+			throw new NodeOperationError(
+				ctx.getNode(),
+				'Attributes (JSON) must be valid JSON. Example: {"title":"..."}',
+				{ itemIndex },
+			);
+		}
+		if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			throw new NodeOperationError(
+				ctx.getNode(),
+				'Attributes (JSON) must be a JSON object. Example: {"title":"..."}',
+				{ itemIndex },
+			);
+		}
+		return parsed as IDataObject;
+	}
+
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			'Attributes (JSON) must be a JSON object. Example: {"title":"..."}',
+			{ itemIndex },
+		);
+	}
+
+	return value as IDataObject;
+}
+
 export class Drupal implements INodeType {
 	/**
 	 * Dynamic methods (loadOptions for entity types / bundles)
@@ -262,7 +302,11 @@ export class Drupal implements INodeType {
 
 			// CREATE
 			else if (operation === 'create') {
-				const attributes = this.getNodeParameter('attributesJson', i) as IDataObject;
+				const attributes = coerceAttributesJson(
+					this,
+					this.getNodeParameter('attributesJson', i),
+					i,
+				);
 				const path = buildJsonApiPath(resourceType);
 
 				const body = {
@@ -278,7 +322,11 @@ export class Drupal implements INodeType {
 			// UPDATE
 			else if (operation === 'update') {
 				const id = this.getNodeParameter('id', i) as string;
-				const attributes = this.getNodeParameter('attributesJson', i) as IDataObject;
+				const attributes = coerceAttributesJson(
+					this,
+					this.getNodeParameter('attributesJson', i),
+					i,
+				);
 				const path = buildJsonApiPath(resourceType, id);
 
 				const body = {

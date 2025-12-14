@@ -16,11 +16,11 @@ function normalizeBaseUrl(input) {
     }
     return url.replace(/\/+$/, '');
 }
-async function ensureDrupalSessionAndCsrf(baseUrl, jar, allowUnauthorized) {
-    var _a, _b, _c;
+async function ensureDrupalSessionAndCsrf(baseUrl, jar) {
+    var _a, _b, _c, _d, _e;
     const creds = (await this.getCredentials('drupalApi'));
-    const username = String((_a = creds.username) !== null && _a !== void 0 ? _a : '').trim();
-    const password = String((_b = creds.password) !== null && _b !== void 0 ? _b : '').trim();
+    const username = (_c = (_b = (_a = creds.username) !== null && _a !== void 0 ? _a : creds.user) !== null && _b !== void 0 ? _b : creds.email) !== null && _c !== void 0 ? _c : '';
+    const password = (_e = (_d = creds.password) !== null && _d !== void 0 ? _d : creds.pass) !== null && _e !== void 0 ? _e : '';
     if (!username || !password) {
         throw new Error('Session auth requires username/password in the Drupal API credentials.');
     }
@@ -28,7 +28,7 @@ async function ensureDrupalSessionAndCsrf(baseUrl, jar, allowUnauthorized) {
     const cached = csrfTokenCache.get(cacheKey);
     if (cached)
         return cached;
-    const loginRequest = {
+    await this.helpers.httpRequest.call(this, {
         method: 'POST',
         url: `${baseUrl}/user/login?_format=json`,
         json: true,
@@ -38,13 +38,14 @@ async function ensureDrupalSessionAndCsrf(baseUrl, jar, allowUnauthorized) {
             'Content-Type': 'application/json',
         },
         jar,
-        rejectUnauthorized: !allowUnauthorized,
-    };
-    const loginResponse = (await this.helpers.httpRequest.call(this, loginRequest));
-    const csrf = String((_c = loginResponse.csrf_token) !== null && _c !== void 0 ? _c : '').trim();
-    if (!csrf) {
-        throw new Error('Login succeeded but no csrf_token was returned.');
-    }
+    });
+    const token = await this.helpers.httpRequest.call(this, {
+        method: 'GET',
+        url: `${baseUrl}/session/token`,
+        json: false,
+        jar,
+    });
+    const csrf = (typeof token === 'string' ? token : String(token)).trim();
     csrfTokenCache.set(cacheKey, csrf);
     return csrf;
 }
@@ -68,21 +69,13 @@ async function drupalApiRequest(method, path, body = {}, qs = {}, options = {}) 
     };
     try {
         if (authMethod === 'session') {
-            const helpersWithRequest = this.helpers;
-            const jar = ((_c = helpersWithRequest.request) === null || _c === void 0 ? void 0 : _c.jar)
-                ? helpersWithRequest.request.jar()
-                : true;
+            const jar = ((_c = this.helpers.request) === null || _c === void 0 ? void 0 : _c.jar) ? this.helpers.request.jar() : true;
             if (!['GET', 'HEAD', 'OPTIONS'].includes(String(method).toUpperCase())) {
-                const csrf = await ensureDrupalSessionAndCsrf.call(this, baseUrl, jar, allowUnauthorized);
+                const csrf = await ensureDrupalSessionAndCsrf.call(this, baseUrl, jar);
                 requestOptions.headers['X-CSRF-Token'] = csrf;
             }
-            const reqWithJar = {
-                ...requestOptions,
-                ...options,
-                jar,
-                rejectUnauthorized: !allowUnauthorized,
-            };
-            return await this.helpers.httpRequest.call(this, reqWithJar);
+            requestOptions.jar = jar;
+            return await this.helpers.httpRequest.call(this, { ...requestOptions, ...options });
         }
         return await this.helpers.httpRequestWithAuthentication.call(this, 'drupalApi', { ...requestOptions, ...options });
     }

@@ -10,6 +10,24 @@ import { NodeApiError } from 'n8n-workflow';
 
 type ThisCtx = IExecuteFunctions | ILoadOptionsFunctions;
 
+type CookieJarLike = unknown;
+
+type DrupalLoginResponse = {
+	csrf_token?: string;
+	current_user?: {
+		uid?: string;
+		name?: string;
+		roles?: string[];
+	};
+	logout_token?: string;
+};
+
+type HttpRequestOptionsWithJar = IHttpRequestOptions & {
+	jar?: CookieJarLike;
+	// n8n supports this at runtime even if typings don’t include it
+	rejectUnauthorized?: boolean;
+};
+
 export function buildJsonApiPath(resourceType: string, id?: string): string {
 	// resourceType is like "node--page"
 	const [entityTypeId, bundle] = resourceType.split('--');
@@ -29,33 +47,26 @@ function normalizeBaseUrl(input: string): string {
 	return url.replace(/\/+$/, '');
 }
 
-async function ensureDrupalSessionAndCsrf(this: ThisCtx, baseUrl: string, jar: any): Promise<string> {
+async function ensureDrupalSessionAndCsrf(
+	this: ThisCtx,
+	baseUrl: string,
+	jar: CookieJarLike,
+	allowUnauthorized: boolean,
+): Promise<string> {
 	const creds = (await this.getCredentials('drupalApi')) as IDataObject;
 
-	// These property names depend on how your credential is defined.
-	// Common patterns are: username/password OR user/pass OR email/password.
-	const username =
-		(creds.username as string) ??
-		(creds.user as string) ??
-		(creds.email as string) ??
-		'';
-	const password =
-		(creds.password as string) ??
-		(creds.pass as string) ??
-		'';
+	const username = String(creds.username ?? '').trim();
+	const password = String(creds.password ?? '').trim();
 
 	if (!username || !password) {
-		throw new Error(
-			'Session auth requires username/password in the Drupal API credentials.',
-		);
+		throw new Error('Session auth requires username/password in the Drupal API credentials.');
 	}
 
 	const cacheKey = `${baseUrl}::${username}`;
 	const cached = csrfTokenCache.get(cacheKey);
 	if (cached) return cached;
 
-	// Login to get session cookie
-	await this.helpers.httpRequest.call(this, {
+	const loginRequest: HttpRequestOptionsWithJar = {
 		method: 'POST',
 		url: `${baseUrl}/user/login?_format=json`,
 		json: true,
@@ -65,17 +76,19 @@ async function ensureDrupalSessionAndCsrf(this: ThisCtx, baseUrl: string, jar: a
 			'Content-Type': 'application/json',
 		},
 		jar,
-	} as any);
+		rejectUnauthorized: !allowUnauthorized,
+	};
 
-	// Fetch CSRF token (required for PATCH/POST/DELETE with session cookies)
-	const token = await this.helpers.httpRequest.call(this, {
-		method: 'GET',
-		url: `${baseUrl}/session/token`,
-		json: false,
-		jar,
-	} as any);
+	const loginResponse = (await this.helpers.httpRequest.call(
+		this,
+		loginRequest,
+	)) as unknown as DrupalLoginResponse;
 
-	const csrf = (typeof token === 'string' ? token : String(token)).trim();
+	const csrf = String(loginResponse.csrf_token ?? '').trim();
+	if (!csrf) {
+		throw new Error('Login succeeded but no csrf_token was returned.');
+	}
+
 	csrfTokenCache.set(cacheKey, csrf);
 	return csrf;
 }
@@ -112,19 +125,24 @@ export async function drupalApiRequest(
 		if (authMethod === 'session') {
 			// Persist cookies across the login/token/request sequence.
 			// n8n provides request.jar(), fall back to jar: true.
-			const jar = (this.helpers as any).request?.jar ? (this.helpers as any).request.jar() : true;
+			const helpersWithRequest = this.helpers as unknown as { request?: { jar?: () => CookieJarLike } };
+			const jar = helpersWithRequest.request?.jar
+				? helpersWithRequest.request.jar()
+				: (true as unknown as CookieJarLike);
 
-			// For unsafe methods, ensure CSRF token and attach it.
 			if (!['GET', 'HEAD', 'OPTIONS'].includes(String(method).toUpperCase())) {
-				const csrf = await ensureDrupalSessionAndCsrf.call(this, baseUrl, jar);
+				const csrf = await ensureDrupalSessionAndCsrf.call(this, baseUrl, jar, allowUnauthorized);
 				(requestOptions.headers as IDataObject)['X-CSRF-Token'] = csrf;
 			}
 
-			(requestOptions as any).jar = jar;
+			const reqWithJar: HttpRequestOptionsWithJar = {
+				...(requestOptions as HttpRequestOptionsWithJar),
+				...options,
+				jar,
+				rejectUnauthorized: !allowUnauthorized,
+			};
 
-			// Use plain httpRequest, not httpRequestWithAuthentication,
-			// so no Authorization header is involved.
-			return await this.helpers.httpRequest.call(this, { ...(requestOptions as any), ...options } as any);
+			return await this.helpers.httpRequest.call(this, reqWithJar);
 		}
 
 		// Default: basic

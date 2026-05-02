@@ -31,7 +31,8 @@
     "n8nNodesApiVersion": 1,
     "strict": true,
     "credentials": [
-      "dist/credentials/DrupalApi.credentials.js"
+      "dist/credentials/DrupalApi.credentials.js",
+      "dist/credentials/DrupalOAuth2Api.credentials.js"
     ],
     "nodes": [
       "dist/nodes/Drupal/Drupal.node.js"

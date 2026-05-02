@@ -4,7 +4,7 @@ exports.Drupal = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const n8n_workflow_2 = require("n8n-workflow");
 const GenericFunctions_1 = require("./GenericFunctions");
-function coerceAttributesJson(ctx, value, itemIndex) {
+function coerceObjectJson(ctx, value, itemIndex, fieldLabel) {
     const trimmed = (value !== null && value !== void 0 ? value : '').trim();
     if (!trimmed)
         return {};
@@ -13,12 +13,35 @@ function coerceAttributesJson(ctx, value, itemIndex) {
         parsed = JSON.parse(trimmed);
     }
     catch {
-        throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), 'Attributes (JSON) must be valid JSON. Example: {"title":"..."}', { itemIndex });
+        throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), `${fieldLabel} must be valid JSON.`, { itemIndex });
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), 'Attributes (JSON) must be a JSON object. Example: {"title":"..."}', { itemIndex });
+        throw new n8n_workflow_2.NodeOperationError(ctx.getNode(), `${fieldLabel} must be a JSON object.`, { itemIndex });
     }
     return parsed;
+}
+function asDataObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return undefined;
+    }
+    return value;
+}
+function normalizeResourceObject(payload) {
+    var _a;
+    const dataPayload = asDataObject(payload.data);
+    const source = dataPayload !== null && dataPayload !== void 0 ? dataPayload : payload;
+    const explicitAttributes = asDataObject(source.attributes);
+    const explicitRelationships = asDataObject(source.relationships);
+    if (explicitAttributes || explicitRelationships) {
+        return {
+            attributes: explicitAttributes !== null && explicitAttributes !== void 0 ? explicitAttributes : {},
+            relationships: explicitRelationships !== null && explicitRelationships !== void 0 ? explicitRelationships : {},
+        };
+    }
+    const attributes = { ...source };
+    const relationships = (_a = asDataObject(attributes.relationships)) !== null && _a !== void 0 ? _a : {};
+    delete attributes.relationships;
+    return { attributes, relationships };
 }
 class Drupal {
     constructor() {
@@ -104,8 +127,43 @@ class Drupal {
             usableAsTool: true,
             inputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
-            credentials: [{ name: 'drupalApi', required: true }],
+            credentials: [
+                {
+                    name: 'drupalApi',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            authentication: ['basicAuth'],
+                        },
+                    },
+                },
+                {
+                    name: 'drupalOAuth2Api',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            authentication: ['oAuth2'],
+                        },
+                    },
+                },
+            ],
             properties: [
+                {
+                    displayName: 'Authentication',
+                    name: 'authentication',
+                    type: 'options',
+                    options: [
+                        {
+                            name: 'Basic Auth',
+                            value: 'basicAuth',
+                        },
+                        {
+                            name: 'OAuth2',
+                            value: 'oAuth2',
+                        },
+                    ],
+                    default: 'basicAuth',
+                },
                 {
                     displayName: 'Entity Type {Entity} Name or ID',
                     name: 'entityTypeId',
@@ -173,6 +231,21 @@ class Drupal {
                     description: 'JSON of attributes for JSON:API create/update',
                 },
                 {
+                    displayName: 'Relationships (JSON)',
+                    name: 'relationshipsJson',
+                    type: 'string',
+                    typeOptions: {
+                        rows: 8,
+                    },
+                    default: '{}',
+                    displayOptions: {
+                        show: {
+                            operation: ['create', 'update'],
+                        },
+                    },
+                    description: 'Optional JSON:API relationships object for entity references',
+                },
+                {
                     displayName: 'Query Parameters',
                     name: 'query',
                     type: 'json',
@@ -228,27 +301,59 @@ class Drupal {
             }
             else if (operation === 'create') {
                 const attributesJson = this.getNodeParameter('attributesJson', i);
-                const attributes = coerceAttributesJson(this, attributesJson, i);
+                const relationshipsJson = this.getNodeParameter('relationshipsJson', i);
+                const attributes = coerceObjectJson(this, attributesJson, i, 'Attributes (JSON)');
+                const relationships = coerceObjectJson(this, relationshipsJson, i, 'Relationships (JSON)');
+                const normalizedAttributesInput = normalizeResourceObject(attributes);
+                const normalizedRelationshipsInput = normalizeResourceObject(relationships);
+                const resolvedAttributes = {
+                    ...normalizedAttributesInput.attributes,
+                    ...normalizedRelationshipsInput.attributes,
+                };
+                const resolvedRelationships = {
+                    ...normalizedAttributesInput.relationships,
+                    ...normalizedRelationshipsInput.relationships,
+                };
                 const path = (0, GenericFunctions_1.buildJsonApiPath)(resourceType);
+                const data = {
+                    type: resourceType,
+                    attributes: resolvedAttributes,
+                };
+                if (Object.keys(resolvedRelationships).length > 0) {
+                    data.relationships = resolvedRelationships;
+                }
                 const body = {
-                    data: {
-                        type: resourceType,
-                        attributes,
-                    },
+                    data,
                 };
                 response = await GenericFunctions_1.drupalApiRequest.call(this, 'POST', path, body);
             }
             else if (operation === 'update') {
                 const id = this.getNodeParameter('id', i);
                 const attributesJson = this.getNodeParameter('attributesJson', i);
-                const attributes = coerceAttributesJson(this, attributesJson, i);
+                const relationshipsJson = this.getNodeParameter('relationshipsJson', i);
+                const attributes = coerceObjectJson(this, attributesJson, i, 'Attributes (JSON)');
+                const relationships = coerceObjectJson(this, relationshipsJson, i, 'Relationships (JSON)');
+                const normalizedAttributesInput = normalizeResourceObject(attributes);
+                const normalizedRelationshipsInput = normalizeResourceObject(relationships);
+                const resolvedAttributes = {
+                    ...normalizedAttributesInput.attributes,
+                    ...normalizedRelationshipsInput.attributes,
+                };
+                const resolvedRelationships = {
+                    ...normalizedAttributesInput.relationships,
+                    ...normalizedRelationshipsInput.relationships,
+                };
                 const path = (0, GenericFunctions_1.buildJsonApiPath)(resourceType, id);
+                const data = {
+                    type: resourceType,
+                    id,
+                    attributes: resolvedAttributes,
+                };
+                if (Object.keys(resolvedRelationships).length > 0) {
+                    data.relationships = resolvedRelationships;
+                }
                 const body = {
-                    data: {
-                        type: resourceType,
-                        id,
-                        attributes,
-                    },
+                    data,
                 };
                 response = await GenericFunctions_1.drupalApiRequest.call(this, 'PATCH', path, body);
             }

@@ -13,10 +13,11 @@ import { NodeOperationError } from 'n8n-workflow';
 
 import { drupalApiRequest, buildJsonApiPath } from './GenericFunctions';
 
-function coerceAttributesJson(
+function coerceObjectJson(
 	ctx: IExecuteFunctions,
 	value: string,
 	itemIndex: number,
+	fieldLabel: string,
 ): IDataObject {
 	const trimmed = (value ?? '').trim();
 	if (!trimmed) return {};
@@ -27,7 +28,7 @@ function coerceAttributesJson(
 	} catch {
 		throw new NodeOperationError(
 			ctx.getNode(),
-			'Attributes (JSON) must be valid JSON. Example: {"title":"..."}',
+			`${fieldLabel} must be valid JSON.`,
 			{ itemIndex },
 		);
 	}
@@ -35,12 +36,43 @@ function coerceAttributesJson(
 	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
 		throw new NodeOperationError(
 			ctx.getNode(),
-			'Attributes (JSON) must be a JSON object. Example: {"title":"..."}',
+			`${fieldLabel} must be a JSON object.`,
 			{ itemIndex },
 		);
 	}
 
 	return parsed as IDataObject;
+}
+
+function asDataObject(value: unknown): IDataObject | undefined {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return undefined;
+	}
+
+	return value as IDataObject;
+}
+
+function normalizeResourceObject(
+	payload: IDataObject,
+): { attributes: IDataObject; relationships: IDataObject } {
+	const dataPayload = asDataObject(payload.data);
+	const source = dataPayload ?? payload;
+
+	const explicitAttributes = asDataObject(source.attributes);
+	const explicitRelationships = asDataObject(source.relationships);
+
+	if (explicitAttributes || explicitRelationships) {
+		return {
+			attributes: explicitAttributes ?? {},
+			relationships: explicitRelationships ?? {},
+		};
+	}
+
+	const attributes: IDataObject = { ...source };
+	const relationships = asDataObject(attributes.relationships) ?? {};
+	delete attributes.relationships;
+
+	return { attributes, relationships };
 }
 
 export class Drupal implements INodeType {
@@ -154,9 +186,44 @@ export class Drupal implements INodeType {
 		usableAsTool: true,
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
-		credentials: [{ name: 'drupalApi', required: true }],
+		credentials: [
+			{
+				name: 'drupalApi',
+				required: true,
+				displayOptions: {
+					show: {
+						authentication: ['basicAuth'],
+					},
+				},
+			},
+			{
+				name: 'drupalOAuth2Api',
+				required: true,
+				displayOptions: {
+					show: {
+						authentication: ['oAuth2'],
+					},
+				},
+			},
+		],
 
 		properties: [
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: [
+					{
+						name: 'Basic Auth',
+						value: 'basicAuth',
+					},
+					{
+						name: 'OAuth2',
+						value: 'oAuth2',
+					},
+				],
+				default: 'basicAuth',
+			},
 			// Entity Type / Bundle (driven by JSON:API /jsonapi index)
 			{
 				displayName: 'Entity Type {Entity} Name or ID',
@@ -225,6 +292,22 @@ export class Drupal implements INodeType {
 					},
 				},
 				description: 'JSON of attributes for JSON:API create/update',
+			},
+			{
+				displayName: 'Relationships (JSON)',
+				name: 'relationshipsJson',
+				type: 'string',
+				typeOptions: {
+					rows: 8,
+				},
+				default: '{}',
+				displayOptions: {
+					show: {
+						operation: ['create', 'update'],
+					},
+				},
+				description:
+					'Optional JSON:API relationships object for entity references',
 			},
 			{
 				displayName: 'Query Parameters',
@@ -296,14 +379,44 @@ export class Drupal implements INodeType {
 			// CREATE
 			else if (operation === 'create') {
 				const attributesJson = this.getNodeParameter('attributesJson', i) as string;
-				const attributes = coerceAttributesJson(this, attributesJson, i);
+				const relationshipsJson = this.getNodeParameter(
+					'relationshipsJson',
+					i,
+				) as string;
+				const attributes = coerceObjectJson(
+					this,
+					attributesJson,
+					i,
+					'Attributes (JSON)',
+				);
+				const relationships = coerceObjectJson(
+					this,
+					relationshipsJson,
+					i,
+					'Relationships (JSON)',
+				);
+				const normalizedAttributesInput = normalizeResourceObject(attributes);
+				const normalizedRelationshipsInput = normalizeResourceObject(relationships);
+				const resolvedAttributes = {
+					...normalizedAttributesInput.attributes,
+					...normalizedRelationshipsInput.attributes,
+				};
+				const resolvedRelationships = {
+					...normalizedAttributesInput.relationships,
+					...normalizedRelationshipsInput.relationships,
+				};
 				const path = buildJsonApiPath(resourceType);
 
+				const data: IDataObject = {
+					type: resourceType,
+					attributes: resolvedAttributes,
+				};
+				if (Object.keys(resolvedRelationships).length > 0) {
+					data.relationships = resolvedRelationships;
+				}
+
 				const body = {
-					data: {
-						type: resourceType,
-						attributes,
-					},
+					data,
 				};
 
 				response = await drupalApiRequest.call(this, 'POST', path, body);
@@ -313,15 +426,45 @@ export class Drupal implements INodeType {
 			else if (operation === 'update') {
 				const id = this.getNodeParameter('id', i) as string;
 				const attributesJson = this.getNodeParameter('attributesJson', i) as string;
-				const attributes = coerceAttributesJson(this, attributesJson, i);
+				const relationshipsJson = this.getNodeParameter(
+					'relationshipsJson',
+					i,
+				) as string;
+				const attributes = coerceObjectJson(
+					this,
+					attributesJson,
+					i,
+					'Attributes (JSON)',
+				);
+				const relationships = coerceObjectJson(
+					this,
+					relationshipsJson,
+					i,
+					'Relationships (JSON)',
+				);
+				const normalizedAttributesInput = normalizeResourceObject(attributes);
+				const normalizedRelationshipsInput = normalizeResourceObject(relationships);
+				const resolvedAttributes = {
+					...normalizedAttributesInput.attributes,
+					...normalizedRelationshipsInput.attributes,
+				};
+				const resolvedRelationships = {
+					...normalizedAttributesInput.relationships,
+					...normalizedRelationshipsInput.relationships,
+				};
 				const path = buildJsonApiPath(resourceType, id);
 
+				const data: IDataObject = {
+					type: resourceType,
+					id,
+					attributes: resolvedAttributes,
+				};
+				if (Object.keys(resolvedRelationships).length > 0) {
+					data.relationships = resolvedRelationships;
+				}
+
 				const body = {
-					data: {
-						type: resourceType,
-						id,
-						attributes,
-					},
+					data,
 				};
 
 				response = await drupalApiRequest.call(this, 'PATCH', path, body);
